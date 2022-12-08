@@ -836,33 +836,57 @@ public class Util {
         }
     }
 
-    public static void objectToStream(Object obj, DataOutput out) throws IOException {
-        if(obj == null) {
-            out.write(TYPE_NULL);
-            return;
-        }
-        if(obj instanceof Streamable) {
-            out.writeByte(TYPE_STREAMABLE);
-            writeGenericStreamable((Streamable)obj,out);
-            return;
-        }
+    public static int sizePrimitive(Object obj) {
         Byte type=obj instanceof Class<?>? TYPES.get(obj) : TYPES.get(obj.getClass());
-        if(type == null) {
-            out.write(TYPE_SERIALIZABLE);
-            try(ObjectOutputStream tmp=new ObjectOutputStream(out instanceof ByteArrayDataOutputStream?
-                                                                new OutputStreamAdapter((ByteArrayDataOutputStream)out) :
-                                                                (OutputStream)out)) {
-                tmp.writeObject(obj);
-                return;
-            }
-        }
         if(obj instanceof Class<?>) {
-            if(type != null) {
-                out.writeByte(TYPE_CLASS);
-                out.writeByte(type);
-                return;
-            }
+            if(type != null)
+                return Global.BYTE_SIZE *2;
         }
+
+        int retval=Global.BYTE_SIZE;
+        switch(type) {
+            case TYPE_BOOLEAN: case TYPE_BOOLEAN_OBJ:
+            case TYPE_BYTE: case TYPE_BYTE_OBJ:
+                return retval+Global.BYTE_SIZE;
+            case TYPE_SHORT: case TYPE_SHORT_OBJ:
+            case TYPE_CHAR: case TYPE_CHAR_OBJ:
+                return retval+Character.BYTES;
+            case TYPE_LONG: case TYPE_LONG_OBJ:
+            case TYPE_DOUBLE: case TYPE_DOUBLE_OBJ:
+                return retval+Double.BYTES;
+            case TYPE_INT: case TYPE_INT_OBJ:
+            case TYPE_FLOAT: case TYPE_FLOAT_OBJ:
+                return retval+Float.BYTES;
+            case TYPE_STRING:
+                String s=(String)obj;
+                retval+=Global.BYTE_SIZE; // is_ascii
+                if(isAsciiString(s))
+                    return retval+Global.INT_SIZE + s.length();
+                else
+                    return retval+Bits.sizeUTF(s);
+            case TYPE_BYTEARRAY:
+                byte[] buf=(byte[])obj;
+                return retval+Global.INT_SIZE + buf.length;
+            default:
+                throw new IllegalArgumentException("type " + type + " is invalid");
+        }
+    }
+
+    public static void writeTypeStreamable(Streamable obj, DataOutput out) throws IOException {
+        out.writeByte(TYPE_STREAMABLE);
+        Util.writeGenericStreamable(obj, out);
+    }
+
+    public static void primitiveToStream(Object obj, DataOutput out) throws IOException {
+        Byte type=obj instanceof Class<?>? TYPES.get(obj) : TYPES.get(obj.getClass());
+        assert type != null : "Object should be primitive";
+
+        if(obj instanceof Class<?>) {
+            out.writeByte(TYPE_CLASS);
+            out.writeByte(type);
+            return;
+        }
+
         out.writeByte(type);
         switch(type) {
             case TYPE_BOOLEAN: case TYPE_BOOLEAN_OBJ:
@@ -902,6 +926,28 @@ public class Util {
         }
     }
 
+    public static void objectToStream(Object obj, DataOutput out) throws IOException {
+        if(obj == null) {
+            out.write(TYPE_NULL);
+            return;
+        }
+        if(obj instanceof Streamable) {
+            writeTypeStreamable((Streamable) obj, out);
+            return;
+        }
+        Byte type=obj instanceof Class<?>? TYPES.get(obj) : TYPES.get(obj.getClass());
+        if(type == null) {
+            out.write(TYPE_SERIALIZABLE);
+            try(ObjectOutputStream tmp=new ObjectOutputStream(out instanceof ByteArrayDataOutputStream?
+                                                                new OutputStreamAdapter((ByteArrayDataOutputStream)out) :
+                                                                (OutputStream)out)) {
+                tmp.writeObject(obj);
+                return;
+            }
+        }
+        primitiveToStream(obj, out);
+    }
+
     public static <T extends Object> T objectFromStream(DataInput in) throws IOException, ClassNotFoundException {
         return objectFromStream(in, null);
     }
@@ -919,6 +965,33 @@ public class Util {
                 try(ObjectInputStream tmp=new ObjectInputStreamWithClassloader(is, loader)) {
                     return (T)tmp.readObject();
                 }
+            case TYPE_BOOLEAN: case TYPE_BOOLEAN_OBJ: return (T)(Boolean)in.readBoolean();
+            case TYPE_BYTE:    case TYPE_BYTE_OBJ:    return (T)(Byte)in.readByte();
+            case TYPE_CHAR:    case TYPE_CHAR_OBJ:    return (T)(Character)in.readChar();
+            case TYPE_DOUBLE:  case TYPE_DOUBLE_OBJ:  return (T)(Double)in.readDouble();
+            case TYPE_FLOAT:   case TYPE_FLOAT_OBJ:   return (T)(Float)in.readFloat();
+            case TYPE_INT:     case TYPE_INT_OBJ:     return (T)(Integer)in.readInt();
+            case TYPE_LONG:    case TYPE_LONG_OBJ:    return (T)(Long)in.readLong();
+            case TYPE_SHORT:   case TYPE_SHORT_OBJ:   return (T)(Short)in.readShort();
+            case TYPE_STRING:                         return (T)readString(in);
+            case TYPE_BYTEARRAY:
+                byte[] tmpbuf=new byte[in.readInt()];
+                in.readFully(tmpbuf);
+                return (T)tmpbuf;
+            case TYPE_CLASS:
+                return (T)CLASS_TYPES.get(in.readByte());
+            default:
+                throw new IllegalArgumentException("type " + b + " is invalid");
+        }
+    }
+
+    public static <T> T primitiveFromStream(DataInput in) throws IOException {
+        if(in == null) return null;
+        byte b=in.readByte();
+
+        switch(b) {
+            case TYPE_NULL:
+                return null;
             case TYPE_BOOLEAN: case TYPE_BOOLEAN_OBJ: return (T)(Boolean)in.readBoolean();
             case TYPE_BYTE:    case TYPE_BYTE_OBJ:    return (T)(Byte)in.readByte();
             case TYPE_CHAR:    case TYPE_CHAR_OBJ:    return (T)(Character)in.readChar();

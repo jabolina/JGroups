@@ -19,9 +19,11 @@ import java.util.function.Supplier;
  */
 public class ObjectMessage extends BaseMessage {
     protected Object obj; // either a SizeStreamable or wrapped into a (SizeStreamable) ObjectWrapper
+    private boolean isStreamable;
 
 
     public ObjectMessage() {
+        this(null);
     }
 
     /**
@@ -30,7 +32,7 @@ public class ObjectMessage extends BaseMessage {
     *             sent to a single member.
     */
     public ObjectMessage(Address dest) {
-        super(dest);
+        this(dest, null);
     }
 
 
@@ -62,10 +64,18 @@ public class ObjectMessage extends BaseMessage {
      * it will be wrapped into an {@link ObjectWrapper} (which does implement SizeStreamable)
      */
     public ObjectMessage setObject(Object obj) {
-        if(obj == null || obj instanceof SizeStreamable || Util.isPrimitiveType(obj))
+        if (obj != null && Util.isPrimitiveType(obj)) {
+            this.obj = obj;
+            isStreamable = false;
+            return this;
+        }
+
+        if (obj == null || obj instanceof SizeStreamable)
             this.obj=obj;
         else
             this.obj=new ObjectWrapper(obj);
+
+        isStreamable = true;
         return this;
     }
 
@@ -85,11 +95,15 @@ public class ObjectMessage extends BaseMessage {
 
 
     public void writePayload(DataOutput out) throws IOException {
-        Util.objectToStream(obj, out);
+        out.writeByte(isStreamable ? 1 : 0);
+        if (isStreamable) Util.writeGenericStreamable((SizeStreamable) obj, out);
+        else Util.primitiveToStream(obj, out);
     }
 
     public void readPayload(DataInput in) throws IOException, ClassNotFoundException {
-        obj=Util.objectFromStream(in);
+        isStreamable = in.readByte() == 1;
+        if (isStreamable) this.obj=Util.readGenericStreamable(in);
+        else this.obj=Util.primitiveFromStream(in);
     }
 
     @Override protected Message copyPayload(Message copy) {
@@ -103,6 +117,9 @@ public class ObjectMessage extends BaseMessage {
     }
 
     protected int objSize() {
-        return Util.size(obj);
+        int size = Global.BYTE_SIZE;
+
+        if (isStreamable) return size + Util.size((SizeStreamable) obj);
+        return size + Util.sizePrimitive(obj);
     }
 }
