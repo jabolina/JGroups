@@ -20,6 +20,7 @@
         <nexus.snapshot.server.url>https://repository.jboss.org/nexus/content/repositories/snapshots/</nexus.snapshot.server.url>
         <insecure.repositories>ERROR</insecure.repositories>
         <log4j2.version>2.25.0</log4j2.version>
+        <jcstress.version>0.16</jcstress.version>
     </properties>
 
     <organization>
@@ -128,6 +129,12 @@
             <groupId>org.jboss.byteman</groupId>
             <artifactId>byteman</artifactId>
             <version>4.0.25</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.openjdk.jcstress</groupId>
+            <artifactId>jcstress-core</artifactId>
+            <version>${jcstress.version}</version>
             <optional>true</optional>
         </dependency>
     </dependencies>
@@ -556,6 +563,47 @@
                                         <sectnumlevels>3</sectnumlevels>
                                         <sectanchors>true</sectanchors>
                                     </attributes>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <profile>
+            <id>jcstress</id>
+            <properties>
+                <skipTests>true</skipTests>
+            </properties>
+
+            <build>
+                <plugins>
+                    <!-- Generate uber jar for JCStress tests -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-shade-plugin</artifactId>
+                        <version>3.6.0</version>
+
+                        <executions>
+                            <execution>
+                                <id>main</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>shade</goal>
+                                </goals>
+                                <configuration>
+                                    <finalName>concurrency-test</finalName>
+                                    <transformers>
+                                        <transformer
+                                                implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                            <mainClass>org.openjdk.jcstress.Main</mainClass>
+                                        </transformer>
+                                        <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
+                                            <resource>META-INF/TestList</resource>
+                                        </transformer>
+                                    </transformers>
+                                    <createDependencyReducedPom>false</createDependencyReducedPom>
                                 </configuration>
                             </execution>
                         </executions>
