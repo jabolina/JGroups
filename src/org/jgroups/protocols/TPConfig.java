@@ -351,6 +351,9 @@ public class TPConfig extends Protocol {
             throw new IllegalArgumentException("bundler type has to be non-null");
 
         switch(type) {
+            case "ring-buffer":
+            case "rb":
+                return new RingBufferBundler();
             case "transfer-queue":
             case "tq":
                 return new TransferQueueBundler();
